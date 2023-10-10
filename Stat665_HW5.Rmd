@@ -1,0 +1,111 @@
+---
+title: "Stat665 Homework 5"
+author: "Michelle Zamperlini"
+date: "2023-10-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(stats)
+```
+
+## Problem 1
+
+**a.** If we first think of the data as n Bernoulli trials, then we imagine the likelihood function could resemble the following:
+
+\[\prod^{n}_{n=1}\pi^{Y_n}(1-\pi)^{1-Y_n}\]
+
+Our data, though, has different \(\pi_k\) and splits our data into separate \(n_k\). Therefore, our likelihood has to change to take these values into account.
+
+\[\prod^k_{k=1}\prod^{n_k}_{n_k=1}\pi_k^{Y_{kn_k}}(1-\pi_k)^{1-{Y_{kn_k}}}\]
+
+By expanding that inner product, our likelihood takes the following form, where \(\sum{Y_{kn_k}}\) sums the number of 'successes' within the k group of results:
+
+\[\prod^k_{k=1}\pi_k^{\sum{Y_{kn_k}}}(1-\pi_k)^{n_k-{\sum{Y_{kn_k}}}}\]
+
+This final equation above is the equivalent to the kernel of the likelihood function of a binomial with k observations, and thus we have shown that the data can be thought of as either n Bernoulli observations or k Binomial ones. 
+
+**b.** When we look at the ungrouped data, the saturated model would include a parameter estimate for each observation, potentially n-1 parameters, and an intercept term associated with the baseline: a total of n. If we group the data, our observations are no longer individuals, but actually the k groups. This means the saturated model would have k parameters in the case of grouped data.
+
+## Problem 2
+
+```{r, include = FALSE}
+bedrest <- tibble(treatment = c('No activity restrictions', 
+                                'Activity restrictions'),
+                  `Preterm births` = c(13, 16),
+                  `Full-term births` = c(24, 20))
+
+bedrest_grouped <- bedrest %>% 
+  mutate(treatment = fct_inorder(treatment),
+         treatment_size = (`Preterm births` + `Full-term births`),
+         prop_preterm = `Preterm births` / treatment_size)
+```
+```{r}
+bedrest_glm <- glm(prop_preterm ~ treatment, data = bedrest_grouped,
+                            weights = treatment_size,
+                            family = binomial(link = 'identity'))
+summary(bedrest_glm)
+```
+
+**a.** The estimates from the grouped data are the same as the estimates from the long data previously seen in class, the deviance though is very different. Our residual deviance for the group data is essentially 0 because we are working with a saturated model. It's important we work with the null deviance when determining the fit of our model.
+
+**b.** We know the residual deviance before fitting the model because our data is grouped and our model is therefore saturated. Since deviance compares the fitted model to the saturated model, we expect to see no deviance and anticipate it to be zero.
+
+**c.** Here we use the null deviance to access the model fit. \(G^2 = .66134\), our p-value is large at \(p= .416\) and thus we determine that the model is not a significantly better fit than the intercept-only model.
+
+```{r}
+summary(bedrest_glm)$null.deviance
+pchisq(bedrest_glm$null.deviance, 1, lower.tail = FALSE)
+```
+
+**d.** For the ungrouped data, the above strategy of using the null deviance to interpret fit of the model does not work. We default to using the residual deviance as our \(G^2\) and calculating our p-value based upon that comparison of the reduced (intercept only) vs saturated model (one parameter per group except for the baseline).
+
+
+## Problem 3
+
+```{r, include = FALSE}
+cereb_trb1 <- read.csv('cerebellum_rnaseq_tbr1.csv') %>% 
+  filter(stage == 'Embryonic') %>%
+  mutate(age_from_11 = day-11)
+              4
+model1 <- glm(count ~ age_from_11, data = cereb_trb1, 
+    family = poisson(link = 'log'))
+
+model2 <- glm(count ~ age_from_11 + I(age_from_11^2), data = cereb_trb1, 
+              family = poisson(link = 'log'))
+```
+
+Creating a general linear model with family poisson and a log link function, we ensure that our responses are the log of the expected counts. The data "day" was also transformed to "age_from_11" where 0 represents an embryo at day 11 and 7 represents an embryo at day 18.
+
+**a.** Even though model2 includes \(age^2\) as a parameter, it is still a linear model. This is because the coefficients are still creating a linear combination of the parameters.
+
+**b.** By leveraging the likelihood ratio test performed when calling the anova function in r, we compare the two models to determine which fits our data better. There is a significant reduction in the deviance of the model when adding \(age^2\), and the significance test results in a p-value that is approximately zero. To confirm, we compare the AIC of model1, \(947.977\), and model2,\(468.9509\), and conclude that model2 fits the data better. 
+
+```{r}
+anova(model1, model2, test = 'LRT')
+AIC(model1,model2)
+```
+
+**c.** Visualizing the expected counts of the TBR1 gene for days 11-18 of the embryonic stage. 
+
+```{r,echo=FALSE}
+x <- c(0:7)
+y <- exp(model2$coefficients[1] + (model2$coefficients[2]*x) + (model2$coefficients[3]*(x^2)))
+
+plot(x+11, y,
+     xlab = "Day",
+     ylab = "Expected TBR1 Gene Count")
+```
+
+**d.** 95% Confidence Intervals for the parameters in model 2
+
+```{r}
+confint(model2, level = 0.95)
+```
+
+**e.** Visual diagnostics to confirm the fit of the model to the data requires us to look at the following 4 plots. The first of the Residuals vs Fitted values doesn't seem to show any form of pattern that would lead us to believe there are dependencies. The second plot, the Normal Q-Q plot, shows that our data strays from normality particularly at the higher data values. The 3rd plot, similarly to the first, we hope to see a homogeneous and random scattering of points, which visually seems confirmed in this plot. The biggest problems can be seen in the final plot of the Residuals vs Leverage. We have quite a few points fallowing outside of Cook's distance meaning they are highly influential on our results. Removing these points could have a significant impact on our model, the estimates, our confidence, and the direction of the findings. 
+```{r, echo=FALSE}
+plot(model2)
+```
